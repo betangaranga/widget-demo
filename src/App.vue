@@ -2,54 +2,59 @@
 <template>
   <div id="app">
     <div id="belvo" />
+    <div id="finishText" v-if="processFinished">
+      <p>LOS DATOS HAN COMENZADO A SER RECOPILADOS</p>
+    </div>
   </div>
 </template>
-
+<style scoped>
+  #finishText{
+      color: green;
+      font-size: large
+  }
+</style>
 <script>
 //import axios from "axios";
 export default {
   name: 'App',
   data: ()=> ({
+    processFinished: false,
     belvoAccessToken: null,
     chronosToken: null,
+    chronosUserToken: null,
     chronosAuth: 'Basic N245cnJkcTlnZWhpdW85cG1sbWl1aTRsN3M6MWhmb3EzdGJmc2dqOGM3MWg0dWMzbXJhdW4yNHBnYjMyaXBtNmdyamU2amE1cWFoMmQ1aw==',
     chronosAuthUrl: 'https://api-ion-chrono-dev.auth.us-east-1.amazoncognito.com/oauth2/token',
     chronosUrl: 'https://5tenxo9kni.execute-api.us-east-1.amazonaws.com/dev/'
   }),
-  created(){
-    /*axios({
-      method: 'post',
-      url: this.chronosAuthUrl,
-      data: qs.stringify({
-        grant_type: 'client_credentials',
-        scope: 'leads/simulation-read leads/lead-create verification/verification-read verification/verification-create'
-      }),
-      headers: {
-          'Authorization': this.chronosAuth,
-          'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8'
-        }
-    })
-      .then((result)=> {
-          this.chronosToken = result.data.access_token
-          console.debug("Access token: ", this.chronosToken)
-        })
-        .catch((err) => {
-          console.error("Error getting acces token: ", err, this.chronosAuthUrl)
+  async mounted () {
+            await this.setChronosToken()
 
-    // Do somthing
-        })*/
-          //const requestUrl = `${this.chronosAuthUrl}/${process.env.SHAREPOINT_SITE}`
+            await this.setUserToken()
 
-  },
-  mounted () {
-    window.belvoSDK = require('belvo');
+            window.belvoSDK = require('belvo');
 
-        // Executing the function to load the widget after mount, since we need
-        // the template to be loaded
-        this.loadScript('https://cdn.belvo.io/belvo-widget-1-stable.js');
+            this.loadScript('https://cdn.belvo.io/belvo-widget-1-stable.js');
       },
       methods: {
-        async getChronosToken(){
+        
+        async setUserToken(){
+          const requestUrl = `${this.chronosUrl}authentication/sign-in`
+          const headers = new Headers()
+          headers.append('Authorization', this.chronosToken)
+          const requestOptions = {
+            method: 'PUT',
+            headers: headers,
+            body: JSON.stringify({
+                "email": "00.supernov4.00+p39@gmail.com",
+                "password": "test1234"
+              })
+          }
+          const response = await fetch(requestUrl, requestOptions)
+          const responseText = await response.text();
+          const parsedResponse = JSON.parse(responseText)
+          this.chronosUserToken = parsedResponse.data.auth_token
+        },
+        async setChronosToken(){
           const headers = new Headers()
           headers.append('Authorization', this.chronosAuth)
           headers.append('Content-Type', 'application/x-www-form-urlencoded')
@@ -67,8 +72,9 @@ export default {
           this.chronosToken = parsedResponse.access_token;
         },
         async getBelvoAccessToken() {
-          await this.getChronosToken()
-          const requestUrl = `${this.chronosUrl}/bank_connection/init`
+          await this.setUserToken()
+          //await this.setChronosToken()
+          const requestUrl = `${this.chronosUrl}bank_connection/init`
           const headers = new Headers()
           headers.append('Authorization', this.chronosToken)
           const requestOptions = {
@@ -82,9 +88,27 @@ export default {
           return parsedResponse.data.access_token
           
         },
+        async initDataFetching(link){
+          const requestUrl = `${this.chronosUrl}bank_connection/`
+          const headers = new Headers()
+          headers.append('Authorization', this.chronosUserToken)
+          const requestOptions = {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify({
+                "external_provider_id": link
+              })
+          }
+          const response = await fetch(requestUrl, requestOptions);
+          const responseText = await response.text();
+          console.log("Fetching Response: ", responseText)
+   
+        },
         async createWidget() {
-        const successCallbackFunction = (link, institution) => {
+        const successCallbackFunction = async(link, institution) => {
+          await this.initDataFetching(link)
           console.log(link, institution)
+          this.processFinished = true;
             // Do something with the link and institution,
             // such as associate it with your registered user in your database.
         }
@@ -107,7 +131,6 @@ export default {
             onEvent: (data) => onEventCallbackFunction(data)
         }
         //setAccessToken(this.chronosUrl, this.chronosToken, this)
-        await this.getChronosToken()
         this.belvoAccessToken =  await this.getBelvoAccessToken()
         window.belvoSDK.createWidget(this.belvoAccessToken, config).build()
     },
